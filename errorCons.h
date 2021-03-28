@@ -1,0 +1,1 @@
+#define ARGUMENTS_ERR 1
