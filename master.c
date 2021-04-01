@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <wait.h>
 #include "errorCons.h"
+#include <sys/select.h>
 
 #define MAX_BUFF 1024
 #define READ 0
@@ -25,31 +26,42 @@ typedef struct process {
     //Por donde entra y por donde sale
 } process;
 
-void createSlaves(process slaves[], char ** tasks, int totalTasks, int* tasksAssigned, int totalSlaves);
+static int assignedTasks = 0, totalTasks;
+static size_t finishedTasks = 0;
+static size_t totalSlaves;
+
+void createSlaves(process slaves[], char ** tasks);
+void processTasks(process slaves[], char ** tasks);
 
 int main(int argc, char const *argv[])
 {
+    argc = 1;
     if(argc < 2) {
-        fprintf(stderr,"%s\n","Incorrect amount of arguments");
-        exit(ARGUMENTS_ERR);
+        handle_error("Incorrect amount of arguments");
+        //fprintf(stderr,"%s\n","Incorrect amount of arguments");
+        //exit(ARGUMENTS_ERR);
     }
 
-    int tasksAssigned = 0;
-    int totalTasks = argc - 1;
-    size_t finishedTasks = 0;
+    totalTasks = argc - 1;
 
     char ** tasks = (char**) argv + 1;
-    size_t totalSlaves = (totalTasks < MAX_SLAVES) ? totalTasks : MAX_SLAVES;
+    totalSlaves = (totalTasks < MAX_SLAVES) ? totalTasks : MAX_SLAVES;
 
     process slaves[totalSlaves];
 
-    createSlaves(slaves, tasks, totalTasks, &tasksAssigned, totalSlaves);
+    createSlaves(slaves, tasks);
+
+    processTasks(slaves, tasks);
+
+    return 0;
+}
+
+void processTasks(process slaves[], char ** tasks){
 
     fd_set fdSet;
     int maxFd = -1;
 
     while( finishedTasks < totalTasks ){
-
         FD_ZERO(&fdSet);
         int fd;
         for(int i = 0; i < totalSlaves; i++) {
@@ -67,41 +79,57 @@ int main(int argc, char const *argv[])
             //basta hermano de errores
         }
 
-        for(int i = 0; toRead > 0 && i < totalSlaves ; i++){
+        for(int i = 0; toRead > 0 && i < totalSlaves; i++){
             fd = slaves[i].inFd;
-            char buffer[MAX_BUFF] = {0};
+            char readBuffer[MAX_BUFF] = {0};
             if( FD_ISSET(fd, &fdSet) ){
                 size_t amount = 0;
-                if( amount = read(fd, buffer, MAX_BUFF) == -1 ){
+
+                if( ( amount = read(fd, readBuffer, MAX_BUFF) ) == ERROR ){
                     //hermano tanto vas a fallar???
                 }
+
                 if(amount == 0){
+                    slaves[i].isWorking = FALSE;
+                }else{
+                    //PARSEAR TAREAS
+                    char * token;
+                    token = strtok(readBuffer, "\t");
+                    while( token != NULL ) {
+                        finishedTasks++;
+                        slaves[i].remainingTasks--;
+                        //printf("TOKEN: %s",token);
+                        
+                        printf("Tarea %ld\n", finishedTasks);
+                        printf("finished tasks: %ld\n", finishedTasks);
+                        printf("total tasks: %d\n", totalTasks);
+                        printf("assigned tasks: %d\n", assignedTasks);
+                        printf("token: %s\n", token);
+                        printf("-------------------\n");
+                        token = strtok(NULL, "\t");
+                        //break;
+                        //hay que mandar a la shm
+                    }
+
+                    if( assignedTasks < totalTasks && slaves[i].remainingTasks == 0){
+                        char * writeBuffer = tasks[assignedTasks++];
+                        if( write(slaves[i].outFd, writeBuffer, strlen(writeBuffer)) == ERROR ) {
+                            //Salida error :) o tal vez :(
+                        }
+                        slaves[i].remainingTasks++;
+                    } else if( assignedTasks == totalTasks ) {
+                        if( close(slaves[i].outFd) == ERROR ) {
+                            //Salida error :(
+                        }
+                    }
 
                 }
             }
         }
     }
-    return 0;
-/*
-    int count = 0;
-    char newAnswer[MAX_BUFF] = {0}; 
-    //write(paths[WRITE], argv[1], strlen(argv[1]));
-    count = read(answers[READ], newAnswer, MAX_BUFF);
-    printf("%s\n", newAnswer);
-
-    newAnswer[count] = 0;
-    write(paths[WRITE], argv[2], strlen(argv[2]));
-    read(answers[READ], newAnswer, MAX_BUFF);
-    printf("%s\n", newAnswer);
-
-    newAnswer[count] = 0;
-    write(paths[WRITE], argv[3], strlen(argv[3]));
-    read(answers[READ], newAnswer, MAX_BUFF);
-    printf("%s\n", newAnswer);
-*/
 }
 
-void createSlaves(process slaves[], char ** tasks, int totalTasks, int* tasksAssigned, int totalSlaves){    
+void createSlaves(process slaves[], char ** tasks){    
     //Si totalTasks >= INITIAL * totalSlaves -> Mandar INITIAL files al crearlos
     int paths[2], answers[2];
     int pid;
@@ -123,7 +151,7 @@ void createSlaves(process slaves[], char ** tasks, int totalTasks, int* tasksAss
         if( ( pid = fork() ) == 0 ){
 
             for (int j = 1; j <= initialTasks; j++){
-                execParams[j] = tasks[(*tasksAssigned)++];
+                execParams[j] = tasks[assignedTasks++];
             }
             
             if( dup2(paths[READ], STDIN) == ERROR || dup2(answers[WRITE], STDOUT) == ERROR ){
@@ -148,7 +176,7 @@ void createSlaves(process slaves[], char ** tasks, int totalTasks, int* tasksAss
         slaves[i].outFd = paths[WRITE];
         slaves[i].isWorking = TRUE;
         
-        *tasksAssigned += initialTasks;
+        assignedTasks += initialTasks;
 
         if( close(paths[READ]) == ERROR || close(answers[WRITE]) == ERROR ){
                 //mas manejo de errores... BASTA

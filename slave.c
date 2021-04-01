@@ -17,6 +17,8 @@
 
 void solveTask(char const* task);
 
+void waitTasks();
+
 int main(int argc, char const *argv[]){
     
     setvbuf(stdout, NULL, _IONBF, 0); //NO SE PARA QUE ES ESTO LPMMMMMMMMMMMM
@@ -25,8 +27,17 @@ int main(int argc, char const *argv[]){
         solveTask(argv[i]);
 
     //terminó las primeras tareas
+
+    waitTasks();
+    
+    return 0;
+}
+
+void waitTasks(){
+    
     char newTask[MAX_BUFF] = {0}; 
     int count = 0;
+    
     while ( ( count = read(STDIN, newTask, MAX_BUFF) ) != READ_END){
 
         //fprintf(file, newTask);
@@ -40,9 +51,7 @@ int main(int argc, char const *argv[]){
         solveTask(newTask);
         
     }
-    return 0;
 }
-
 void solveTask(char const* task){
 
     char command_line[MAX_BUFF] = {0};
@@ -58,7 +67,8 @@ void solveTask(char const* task){
 	fread(line, sizeof(char), MAX_BUFF,outputStream);
 
     //Open semaforo
-    printf("%s", line);
+    printf("PID:%d\nFile:%s\n%s\t", getpid(), task, line);
+
     //write(STDOUT, line, strlen(line)); 
 
     //Close semaforo  
@@ -66,5 +76,5 @@ void solveTask(char const* task){
     if(pclose(outputStream) == -1){
         //mas manejo de errores
     }
-    return;
+
 }
