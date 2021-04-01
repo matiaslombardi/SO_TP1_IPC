@@ -6,6 +6,7 @@
 #include <wait.h>
 #include "errorCons.h"
 #include <sys/select.h>
+#include <errno.h>
 
 #define MAX_BUFF 1024
 #define READ 0
@@ -16,6 +17,9 @@
 #define INITIAL_TASKS 2
 #define TRUE 1
 #define FALSE 0
+
+#define max(x,y) ((x) > (y) ? (x) : (y))
+
 
 typedef struct process {
     pid_t pid;
@@ -31,15 +35,16 @@ static size_t finishedTasks = 0;
 static size_t totalSlaves;
 
 void createSlaves(process slaves[], char ** tasks);
+int parseToken(char * buffer, char delimiter);
+int fillSet(fd_set * fdSet, process slaves[]);
+void handleBuffer(process * slave, fd_set *fdSet, char ** tasks);
 void processTasks(process slaves[], char ** tasks);
 
-int main(int argc, char const *argv[])
-{
-    argc = 1;
+int main(int argc, char const *argv[]){
+
     if(argc < 2) {
-        handle_error("Incorrect amount of arguments");
-        //fprintf(stderr,"%s\n","Incorrect amount of arguments");
-        //exit(ARGUMENTS_ERR);
+        fprintf(stderr,"%s\n","Incorrect amount of arguments");
+        exit(ARGUMENTS_ERR);
     }
 
     totalTasks = argc - 1;
@@ -50,83 +55,89 @@ int main(int argc, char const *argv[])
     process slaves[totalSlaves];
 
     createSlaves(slaves, tasks);
-
+    
     processTasks(slaves, tasks);
 
     return 0;
 }
 
 void processTasks(process slaves[], char ** tasks){
-
     fd_set fdSet;
-    int maxFd = -1;
+    int maxFd;
 
     while( finishedTasks < totalTasks ){
         FD_ZERO(&fdSet);
-        int fd;
-        for(int i = 0; i < totalSlaves; i++) {
-            if( slaves[i].isWorking ){
-                fd = slaves[i].inFd;
-                FD_SET(fd, &fdSet);
-
-                if( fd > maxFd )
-                    maxFd = fd;               
-            }
-        }
+        maxFd = fillSet(&fdSet, slaves);
 
         int toRead = select(maxFd + 1, &fdSet, NULL, NULL, NULL);
         if(toRead == -1){
-            //basta hermano de errores
+            handle_error("Select failed");
         }
 
         for(int i = 0; toRead > 0 && i < totalSlaves; i++){
-            fd = slaves[i].inFd;
-            char readBuffer[MAX_BUFF] = {0};
-            if( FD_ISSET(fd, &fdSet) ){
-                size_t amount = 0;
+            handleBuffer(&slaves[i], &fdSet, tasks);
+        }
+    }
+}
 
-                if( ( amount = read(fd, readBuffer, MAX_BUFF) ) == ERROR ){
-                    //hermano tanto vas a fallar???
+void handleBuffer(process * slave, fd_set *fdSet, char ** tasks){
+    int fd = slave->inFd;
+    char readBuffer[MAX_BUFF] = {0};
+    
+    if( FD_ISSET(fd, fdSet) ){
+        size_t amount = 0;
+
+        if( ( amount = read(fd, readBuffer, MAX_BUFF) ) == ERROR ){
+            handle_error("Read failed");
+        }
+
+        if( amount == 0 ){
+            slave->isWorking = FALSE;
+        } else {
+            char * token;
+            token = strtok(readBuffer, "\t");
+            while( token != NULL ) {
+                finishedTasks++;
+
+                printf("token: %s\n", token);
+                printf("-------------------\n");
+
+                slave->remainingTasks--;
+
+                token = strtok(NULL, "\t");
+                //hay que mandar a la shm
+            }
+
+            if( assignedTasks < totalTasks && slave->remainingTasks == 0 ){
+                char * writeBuffer = tasks[assignedTasks++];
+
+                if( write(slave->outFd, writeBuffer, strlen(writeBuffer)) == ERROR ) {
+                    handle_error("Write failed");
                 }
 
-                if(amount == 0){
-                    slaves[i].isWorking = FALSE;
-                }else{
-                    //PARSEAR TAREAS
-                    char * token;
-                    token = strtok(readBuffer, "\t");
-                    while( token != NULL ) {
-                        finishedTasks++;
-                        slaves[i].remainingTasks--;
-                        //printf("TOKEN: %s",token);
-                        
-                        printf("Tarea %ld\n", finishedTasks);
-                        printf("finished tasks: %ld\n", finishedTasks);
-                        printf("total tasks: %d\n", totalTasks);
-                        printf("assigned tasks: %d\n", assignedTasks);
-                        printf("token: %s\n", token);
-                        printf("-------------------\n");
-                        token = strtok(NULL, "\t");
-                        //break;
-                        //hay que mandar a la shm
-                    }
-
-                    if( assignedTasks < totalTasks && slaves[i].remainingTasks == 0){
-                        char * writeBuffer = tasks[assignedTasks++];
-                        if( write(slaves[i].outFd, writeBuffer, strlen(writeBuffer)) == ERROR ) {
-                            //Salida error :) o tal vez :(
-                        }
-                        slaves[i].remainingTasks++;
-                    } else if( assignedTasks == totalTasks ) {
-                        if( close(slaves[i].outFd) == ERROR ) {
-                            //Salida error :(
-                        }
-                    }
-
+                slave->remainingTasks++;
+            } else if( assignedTasks == totalTasks ) {
+                if( close(slave->outFd) == ERROR ) {
+                    handle_error("Close failed");
                 }
             }
         }
     }
+}
+
+int fillSet(fd_set * fdSet, process slaves[]) {
+    FD_ZERO(fdSet);
+    int fd;
+    int maxFd = -1;
+
+    for(int i = 0; i < totalSlaves; i++) {
+        if( slaves[i].isWorking ){
+            fd = slaves[i].inFd;
+            FD_SET(fd, fdSet);
+            maxFd = max(maxFd, fd);              
+        }
+    }
+    return maxFd;
 }
 
 void createSlaves(process slaves[], char ** tasks){    
@@ -144,8 +155,7 @@ void createSlaves(process slaves[], char ** tasks){
     {
         
         if( pipe(paths) == ERROR || pipe(answers) == ERROR ){
-            //errores
-            return;
+            handle_error("Pipe failed");
         }
         
         if( ( pid = fork() ) == 0 ){
@@ -155,19 +165,19 @@ void createSlaves(process slaves[], char ** tasks){
             }
             
             if( dup2(paths[READ], STDIN) == ERROR || dup2(answers[WRITE], STDOUT) == ERROR ){
-                //mas manejo de errores... BASTA
+                handle_error("Dup2 failed");
             }
 
             if( close(paths[READ]) == ERROR || close(paths[WRITE]) == ERROR 
                     || close(answers[READ]) == ERROR || close(answers[WRITE]) == ERROR ){
-                //mas manejo de errores... BASTA
+                handle_error("Close failed");
             }
 
             execv(execParams[0], execParams);
-            //si esta aca falló, manejoooooo de Rerrrrrrorres (te falto una r)
+            handle_error("Exec failed");
 
         }else if( pid == ERROR ){
-            //otra vez...
+            handle_error("Fork failed");
         }
 
         slaves[i].pid = pid;
@@ -178,8 +188,9 @@ void createSlaves(process slaves[], char ** tasks){
         
         assignedTasks += initialTasks;
 
-        if( close(paths[READ]) == ERROR || close(answers[WRITE]) == ERROR ){
-                //mas manejo de errores... BASTA
+        if( close(paths[READ]) == ERROR || close(answers[WRITE]) == ERROR ) {
+            handle_error("Close failed");
         }
     }
 }
+

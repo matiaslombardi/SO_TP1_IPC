@@ -21,7 +21,7 @@ void waitTasks();
 
 int main(int argc, char const *argv[]){
     
-    setvbuf(stdout, NULL, _IONBF, 0); //NO SE PARA QUE ES ESTO LPMMMMMMMMMMMM
+    setvbuf(stdout, NULL, _IONBF, 0); 
 
     for (int i = 1; i < argc; i++)
         solveTask(argv[i]);
@@ -42,9 +42,8 @@ void waitTasks(){
 
         //fprintf(file, newTask);
 
-        if(count == -1){
-            exit(-1);
-            //mas manejo de errores
+        if(count == ERROR){
+            handle_error("Read failed");
         }
         
         newTask[count] = 0;
@@ -59,22 +58,16 @@ void solveTask(char const* task){
     
     FILE* outputStream = popen(command_line, "r");
     if(outputStream == NULL){
-        //manejo de errores, esto despues se cambia
-        exit(1);
+        handle_error("Popen failed");
     }
 
     char line[MAX_BUFF] = {0};
 	fread(line, sizeof(char), MAX_BUFF,outputStream);
 
-    //Open semaforo
     printf("PID:%d\nFile:%s\n%s\t", getpid(), task, line);
 
-    //write(STDOUT, line, strlen(line)); 
-
-    //Close semaforo  
-
     if(pclose(outputStream) == -1){
-        //mas manejo de errores
+        handle_error("Pclose failed");
     }
 
 }
