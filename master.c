@@ -1,3 +1,5 @@
+#define _XOPEN_SOURCE 500
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +10,14 @@
 #include <sys/select.h>
 #include <errno.h>
 
-#define MAX_BUFF 1024
+
+#include <sys/mman.h>
+#include <sys/stat.h>        /* For mode constants */
+#include <fcntl.h>           /* For O_* constants */
+
+#include <sys/mman.h>
+
+#define MAX_BUFF 4096
 #define READ 0
 #define WRITE 1
 #define STDIN 0
@@ -17,8 +26,9 @@
 #define INITIAL_TASKS 2
 #define TRUE 1
 #define FALSE 0
-
 #define max(x,y) ((x) > (y) ? (x) : (y))
+
+#define SHM_PATH "/shared"
 
 
 typedef struct process {
@@ -34,11 +44,17 @@ static int assignedTasks = 0, totalTasks;
 static size_t finishedTasks = 0;
 static size_t totalSlaves;
 
+static char * shmPtr;
+static char * shmIndex;
+
 void createSlaves(process slaves[], char ** tasks);
 int parseToken(char * buffer, char delimiter);
 int fillSet(fd_set * fdSet, process slaves[]);
 void handleBuffer(process * slave, fd_set *fdSet, char ** tasks);
 void processTasks(process slaves[], char ** tasks);
+
+char* openShm(size_t memSize);
+void closeShm(char* ptr, size_t memSize);
 
 int main(int argc, char const *argv[]){
 
@@ -52,6 +68,17 @@ int main(int argc, char const *argv[]){
     char ** tasks = (char**) argv + 1;
     totalSlaves = (totalTasks < MAX_SLAVES) ? totalTasks : MAX_SLAVES;
 
+    size_t memSize = totalTasks * MAX_BUFF;
+
+    //wait for vista
+    printf("%s %ld", SHM_PATH, memSize);
+    sleep(2);
+
+    shmPtr = openShm(memSize);
+    shmIndex = shmPtr;
+    closeShm(shmPtr, memSize);
+
+    
     process slaves[totalSlaves];
 
     createSlaves(slaves, tasks);
@@ -106,6 +133,10 @@ void handleBuffer(process * slave, fd_set *fdSet, char ** tasks){
 
                 token = strtok(NULL, "\t");
                 //hay que mandar a la shm
+                //sprintf(shmIndex, token);
+                //shmIndex += strlen(token);
+                //*shmIndex++ = '\t';
+                //post(s)
             }
 
             if( assignedTasks < totalTasks && slave->remainingTasks == 0 ){
@@ -194,3 +225,29 @@ void createSlaves(process slaves[], char ** tasks){
     }
 }
 
+char* openShm(size_t memSize){
+
+    int shmFd = shm_open(SHM_PATH, O_CREAT | O_RDWR, 0666);
+    
+    if(shmFd == ERROR){
+        handle_error("Shm_open failed");
+    }
+
+    if( ftruncate(shmFd, memSize) == ERROR ){
+        handle_error("Ftruncate failed");
+    }
+
+    void * ptr = mmap(0, memSize, PROT_WRITE, MAP_SHARED, shmFd, 0);
+
+    if(close(shmFd) == ERROR) {
+        handle_error("Close failed");
+    }
+     
+    return (char *) ptr;
+}
+void closeShm(char* ptr, size_t memSize){
+    munmap(ptr, memSize);
+    //close();
+    //shm_unlink();
+    //shm_overview();
+}
