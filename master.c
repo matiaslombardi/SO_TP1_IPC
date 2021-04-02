@@ -32,8 +32,6 @@
 #define FALSE 0
 #define max(x,y) ((x) > (y) ? (x) : (y))
 
-
-
 typedef struct process {
     pid_t pid;
     size_t remainingTasks;
@@ -63,6 +61,9 @@ void processTasks(process slaves[], char ** tasks);
 char* openShm(size_t memSize);
 void closeShm(char* ptr, size_t memSize);
 
+void closeSem();
+
+
 int main(int argc, char const *argv[]){
 
     if(argc < 2) {
@@ -81,13 +82,16 @@ int main(int argc, char const *argv[]){
     shmPtr = openShm(memSize);
     shmIndex = shmPtr;
 
-    //wait for vista
-    printf("%s %ld", SHM_PATH, memSize);
-    sleep(2);
-
     //Semaforo
     //Semantica del semaforo: ¿Cuantos resultados hay para leer?
-    
+    if( (sem = sem_open(SEM_NAME, O_CREAT, S_RWALL, 0)) ==  SEM_FAILED ) {
+        handle_error("sem_open failed");
+    }
+
+    //wait for vista
+    setvbuf(stdout, NULL, _IONBF, 0); 
+    printf("%ld", memSize);
+    sleep(2);
 
     //Abrimos el archivo FILE * result
     if((result = fopen("result.txt", "w")) == NULL) {
@@ -105,10 +109,12 @@ int main(int argc, char const *argv[]){
     //Finalización del programa 
     closeShm(shmPtr, memSize); //Revisar si aqui esta bien puesto
 
+    closeSem();
+
     if(fclose(result) == EOF) {
         handle_error("Fclose failed");
     }
-
+    //printf("\n");
     return 0;
 }
 
@@ -143,32 +149,37 @@ void handleBuffer(process * slave, fd_set *fdSet, char ** tasks){
         }
 
         if( amount == 0 ){
+            if( close(fd) == ERROR ) {
+                handle_error("Close failed");
+            }
             slave->isWorking = FALSE;
         } else {
             char * token;
             token = strtok(readBuffer, "\t");
             while( token != NULL ) {
                 finishedTasks++;
-
-                printf("token: %s\n", token);
-                printf("-------------------\n");
-                fprintf(result, "%s\n", token);
-
                 slave->remainingTasks--;
+                
+                if( fprintf(result, "%s\n", token) < 0 ){
+                    handle_error("Fprintf failed");
+                }
+
+                int printed = sprintf(shmIndex, "%s", token);
+                if( printed < 0 ){
+                    handle_error("sprintf failed");
+                }
+                shmIndex += printed + 1; 
+                
+                if( sem_post(sem) == ERROR){
+                    handle_error("Sem_post failed");
+                }
 
                 token = strtok(NULL, "\t");
-                //hay que mandar a la shm
-                ////sprintf(shmIndex, token);
-                //memcpy((void *) shmIndex, (void *) token, strlen(token));
-                //shmIndex += strlen(token);
-                //*shmIndex++ = 0;
-                //post(s)
             }
 
             if( assignedTasks < totalTasks && slave->remainingTasks == 0 ){
                 char * writeBuffer = tasks[assignedTasks++];
                 
-
                 if( write(slave->outFd, writeBuffer, strlen(writeBuffer) + 1 ) == ERROR ) {
                     handle_error("Write failed");
                 }
@@ -255,7 +266,7 @@ void createSlaves(process slaves[], char ** tasks){
 
 char* openShm(size_t memSize){
 
-    int shmFd = shm_open(SHM_PATH, O_CREAT | O_RDWR, 0666);
+    int shmFd = shm_open(SHM_PATH, O_CREAT | O_RDWR, S_RWALL);
     
     if(shmFd == ERROR){
         handle_error("Shm_open failed");
@@ -276,13 +287,23 @@ char* openShm(size_t memSize){
 
 void closeShm(char* ptr, size_t memSize){
 
-    int retVal = munmap(ptr, memSize);
-    if (retVal == ERROR){
+    if (munmap(ptr, memSize)== ERROR){
         handle_error("munmap failed");
     }
     
-    retVal = shm_unlink(SHM_PATH); //con que lo haga master esta bien
-    if (retVal == ERROR){
+    if (shm_unlink(SHM_PATH) == ERROR){
         handle_error("shm_unlink failed");
     }
+}
+
+void closeSem(){
+
+    if( sem_close(sem) == ERROR ){
+        handle_error("Sem_close failed");
+    }
+
+    if( sem_unlink(SEM_NAME) == ERROR ){
+        handle_error("Sem_unlink failed");
+    }
+
 }
