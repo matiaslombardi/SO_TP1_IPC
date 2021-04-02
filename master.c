@@ -10,14 +10,18 @@
 #include <sys/select.h>
 #include <errno.h>
 
-
 #include <sys/mman.h>
 #include <sys/stat.h>        /* For mode constants */
 #include <fcntl.h>           /* For O_* constants */
 
 #include <sys/mman.h>
 
-#define MAX_BUFF 4096
+#include <semaphore.h>
+
+#include "sharedDefs.h"
+
+
+
 #define READ 0
 #define WRITE 1
 #define STDIN 0
@@ -28,7 +32,6 @@
 #define FALSE 0
 #define max(x,y) ((x) > (y) ? (x) : (y))
 
-#define SHM_PATH "/shared"
 
 
 typedef struct process {
@@ -46,6 +49,10 @@ static size_t totalSlaves;
 
 static char * shmPtr;
 static char * shmIndex;
+
+static sem_t * sem;
+
+static FILE * result;
 
 void createSlaves(process slaves[], char ** tasks);
 int parseToken(char * buffer, char delimiter);
@@ -70,20 +77,37 @@ int main(int argc, char const *argv[]){
 
     size_t memSize = totalTasks * MAX_BUFF;
 
+    //Memoria compartida
+    shmPtr = openShm(memSize);
+    shmIndex = shmPtr;
+
     //wait for vista
     printf("%s %ld", SHM_PATH, memSize);
     sleep(2);
 
-    shmPtr = openShm(memSize);
-    shmIndex = shmPtr;
-    closeShm(shmPtr, memSize);
-
+    //Semaforo
+    //Semantica del semaforo: ¿Cuantos resultados hay para leer?
     
+
+    //Abrimos el archivo FILE * result
+    if((result = fopen("result.txt", "w")) == NULL) {
+        handle_error("Fopen failed");
+    }
+    
+    //Creación de esclavos
     process slaves[totalSlaves];
 
     createSlaves(slaves, tasks);
     
+    //Proceso de tareas
     processTasks(slaves, tasks);
+
+    //Finalización del programa 
+    closeShm(shmPtr, memSize); //Revisar si aqui esta bien puesto
+
+    if(fclose(result) == EOF) {
+        handle_error("Fclose failed");
+    }
 
     return 0;
 }
@@ -128,25 +152,29 @@ void handleBuffer(process * slave, fd_set *fdSet, char ** tasks){
 
                 printf("token: %s\n", token);
                 printf("-------------------\n");
+                fprintf(result, "%s\n", token);
 
                 slave->remainingTasks--;
 
                 token = strtok(NULL, "\t");
                 //hay que mandar a la shm
-                //sprintf(shmIndex, token);
+                ////sprintf(shmIndex, token);
+                //memcpy((void *) shmIndex, (void *) token, strlen(token));
                 //shmIndex += strlen(token);
-                //*shmIndex++ = '\t';
+                //*shmIndex++ = 0;
                 //post(s)
             }
 
             if( assignedTasks < totalTasks && slave->remainingTasks == 0 ){
                 char * writeBuffer = tasks[assignedTasks++];
+                
 
-                if( write(slave->outFd, writeBuffer, strlen(writeBuffer)) == ERROR ) {
+                if( write(slave->outFd, writeBuffer, strlen(writeBuffer) + 1 ) == ERROR ) {
                     handle_error("Write failed");
                 }
 
                 slave->remainingTasks++;
+
             } else if( assignedTasks == totalTasks ) {
                 if( close(slave->outFd) == ERROR ) {
                     handle_error("Close failed");
@@ -245,9 +273,16 @@ char* openShm(size_t memSize){
      
     return (char *) ptr;
 }
+
 void closeShm(char* ptr, size_t memSize){
-    munmap(ptr, memSize);
-    //close();
-    //shm_unlink();
-    //shm_overview();
+
+    int retVal = munmap(ptr, memSize);
+    if (retVal == ERROR){
+        handle_error("munmap failed");
+    }
+    
+    retVal = shm_unlink(SHM_PATH); //con que lo haga master esta bien
+    if (retVal == ERROR){
+        handle_error("shm_unlink failed");
+    }
 }

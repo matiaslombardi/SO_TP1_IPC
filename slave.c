@@ -51,6 +51,7 @@ void waitTasks(){
         
     }
 }
+
 void solveTask(char const* task){
 
     char command_line[MAX_BUFF] = {0};
