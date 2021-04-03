@@ -1,3 +1,5 @@
+// This is a personal academic project. Dear PVS-Studio, please check it.
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 #define _XOPEN_SOURCE 500
 
 #include <stdio.h>
@@ -89,7 +91,9 @@ int main(int argc, char const *argv[]){
     }
 
     //wait for vista
-    setvbuf(stdout, NULL, _IONBF, 0); 
+    if( setvbuf(stdout, NULL, _IONBF, 0) != 0 ){
+        handle_error("Setvbuf failed");
+    } 
     printf("%ld", memSize);
     sleep(2);
 

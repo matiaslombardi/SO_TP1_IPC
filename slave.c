@@ -1,3 +1,5 @@
+// This is a personal academic project. Dear PVS-Studio, please check it.
+// PVS-Studio Static Code Analyzer for C, C++ and C#: http://www.viva64.com
 #define _POSIX_C_SOURCE 2
 
 #include <stdio.h>
@@ -35,7 +37,7 @@ int main(int argc, char const *argv[]){
 
 void waitTasks(){
     
-    char newTask[MAX_BUFF] = {0}; 
+    char newTask[MAX_BUFF + 1] = {0}; 
     int count = 0;
     
     while ( ( count = read(STDIN, newTask, MAX_BUFF) ) != READ_END){
