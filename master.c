@@ -4,6 +4,7 @@
 #include "master.h"
 
 int main(int argc, char const *argv[]){
+    
     if(argc < 2) {
         fprintf(stderr,"%s\n","Incorrect amount of arguments");
         exit(EXIT_FAILURE);
@@ -13,9 +14,9 @@ int main(int argc, char const *argv[]){
     tasksMaster.assignedTasks = 0;
     tasksMaster.finishedTasks = 0;
     tasksMaster.totalTasks = argc - 1;
-
-    char ** tasks = (char**) argv + 1;
     tasksMaster.totalSlaves = (tasksMaster.totalTasks < MAX_SLAVES) ? tasksMaster.totalTasks : MAX_SLAVES;
+    
+    char ** tasks = (char**) argv + 1;
 
     size_t memSize = tasksMaster.totalTasks * MAX_BUFF;
     shmData shmMaster;
@@ -36,6 +37,9 @@ int main(int argc, char const *argv[]){
     if( (result = fopen("result.txt", "w")) == NULL ) {
         handle_error("Fopen failed");
     }
+    /*if( setvbuf(result, NULL, _IONBF, 0) ){
+        handle_error("Setvbuf failed");
+    } */
 
     process slaves[tasksMaster.totalSlaves];
 
@@ -50,6 +54,8 @@ int main(int argc, char const *argv[]){
     if( fclose(result) == EOF ) {
         handle_error("Fclose failed");
     }
+
+    terminateSlaves(slaves, tasksMaster.totalSlaves);
 
     return 0;
 }
@@ -72,7 +78,6 @@ void processTasks(process slaves[], char ** tasks, tasksData * tasksMaster, shmD
                 handleBuffer(&slaves[i], &fdSet, tasks, tasksMaster, shmMaster, result);
                 toRead--;
             }
-            
         }
     }
 }
@@ -87,9 +92,6 @@ void handleBuffer(process * slave, fd_set *fdSet, char ** tasks, tasksData *task
     }
 
     if( amount == 0 ){
-        if( close(fd) == ERROR ) {
-            handle_error("Close failed");
-        }
         slave->isWorking = FALSE;
     } else {
         
@@ -115,20 +117,19 @@ void handleBuffer(process * slave, fd_set *fdSet, char ** tasks, tasksData *task
             token = strtok(NULL, "\t");
         }
 
-        if( tasksMaster->assignedTasks < tasksMaster->totalTasks 
-            && slave->remainingTasks == 0 ){
-                
-            char * writeBuffer = tasks[tasksMaster->assignedTasks++];
+        if(slave->remainingTasks == 0) {
+            if(tasksMaster->assignedTasks < tasksMaster->totalTasks ){
+                char * writeBuffer = tasks[tasksMaster->assignedTasks++];
             
-            if( write(slave->outFd, writeBuffer, strlen(writeBuffer) + 1 ) == ERROR ) {
-                handle_error("Write failed");
-            }
-
-            slave->remainingTasks++;
-
-        } else if( tasksMaster->assignedTasks == tasksMaster->totalTasks ) {
-            if( close(slave->outFd) == ERROR ) {
-                handle_error("Close failed");
+                if( write(slave->outFd, writeBuffer, strlen(writeBuffer) + 1 ) == ERROR ) {
+                    handle_error("Write failed");
+                }
+            
+                slave->remainingTasks++;
+            } else {
+                if( close(slave->outFd) == ERROR ) {
+                    handle_error("Close failed");
+                }   
             }
         }
     }
@@ -243,5 +244,17 @@ void closeSem(sem_t * sem){
 
     if( sem_unlink(SEM_NAME) == ERROR ){
         handle_error("Sem_unlink failed");
+    }
+}
+
+void terminateSlaves(process slaves [], int totalSlaves) {
+    for(int i = 0; i < totalSlaves; i++) {
+        if( close(slaves[i].inFd) == ERROR ) {
+            handle_error("Close failed");
+        }   
+
+        if( waitpid(slaves[i].pid, NULL, 0) == ERROR ) {
+            handle_error("Wait failed");
+        }
     }
 }

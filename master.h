@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include <wait.h>
+#include <sys/wait.h>
 #include <sys/select.h>
 #include <errno.h>
 #include <sys/mman.h>
@@ -52,5 +53,6 @@ void processTasks(process slaves[], char ** tasks, tasksData *tasksMaster, shmDa
 char * openShm(size_t memSize);
 void closeShm(char * ptr, size_t memSize);
 void closeSem(sem_t * sem);
+void terminateSlaves(process slaves [], int totalSlaves);
 
 #endif
