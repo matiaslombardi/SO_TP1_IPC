@@ -27,7 +27,7 @@ Para iniciar ambos procesos a la vez, ejecutar lo siguiente:
      $ ./master ./Files/* | ./view 
 
 ## Instrucciones de Testeo y Limpieza
-Finalmente, en el caso de querer realizar los testeos utilizando Valgrind, cppcheck y pvsStudio Analyzer basta con ejecutar, siempre y cuando nos encontremos en un entorno con las respectivas imágenes instaladas
+Por último, en el caso de querer realizar los testeos utilizando Valgrind, cppcheck y pvsStudio Analyzer es necesario contar con los archivos a resolver en una carpeta “Files” dentro del directorio en el que se encuentran los ejecutables, es decir en el cual se está trabajando. Finalmente basta con ejecutar lo siguiente, siempre y cuando nos encontremos en un entorno con los respectivas programas instalados
 
      $ make test 
 
