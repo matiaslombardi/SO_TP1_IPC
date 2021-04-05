@@ -37,9 +37,6 @@ int main(int argc, char const *argv[]){
     if( (result = fopen("result.txt", "w")) == NULL ) {
         handle_error("Fopen failed");
     }
-    /*if( setvbuf(result, NULL, _IONBF, 0) ){
-        handle_error("Setvbuf failed");
-    } */
 
     process slaves[tasksMaster.totalSlaves];
 
@@ -253,7 +250,7 @@ void terminateSlaves(process slaves [], int totalSlaves) {
             handle_error("Close failed");
         }   
 
-        if( waitpid(slaves[i].pid, NULL, 0) == ERROR ) {
+        if( wait(NULL) == ERROR ) {
             handle_error("Wait failed");
         }
     }
