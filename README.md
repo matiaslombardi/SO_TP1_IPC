@@ -1,5 +1,10 @@
 # SO_TP1_IPC
 
+## Autores
+-Arce Doncella , Julian Francisco 60509                         
+-Domingues, Paula Andrea 60148                                
+-Lombardi, Matias Federico 60527  
+
 ## Instrucciones de Compilación
 Ubicado dentro del directorio donde se descargaron los archivos, ejecutar el comando: 
 
